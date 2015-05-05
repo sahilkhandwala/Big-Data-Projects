@@ -1,0 +1,175 @@
+package Sahil;
+
+import java.io.IOException;
+import java.nio.file.FileSystem;
+import java.util.HashMap;
+import java.util.Map.Entry;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.*;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.HTable;
+import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.Text;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.lib.input.MultipleInputs;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class RevisedNFT {
+	
+	public static class RevisedNFTMapper extends Mapper<Object, Text, Text, Text>
+	{
+		HTable table;
+		HashMap<String, IntWritable> map;
+		
+		    @Override
+			public void map(Object key, Text value, Context context) throws IOException, InterruptedException
+			{
+		    	int k1 = 0;
+				String[] input = value.toString().split("\t");
+				String k = input[0];
+				String v = input[1];
+				Get g = new Get(Bytes.toBytes(k+","+v));
+				Result r = table.get(g);
+				if(r==null || r.isEmpty())
+				{
+				    k1++;
+				}
+				else
+				{
+					if(map.containsKey(k))
+					{
+						int count = map.get((k)).get();
+						count++;
+						map.put(k, new IntWritable(count));
+					}
+					else
+					{
+						map.put(k, new IntWritable(1));
+					}
+				}
+			}
+			
+			@Override
+			public void setup(Context context) throws IOException
+			{
+				Configuration conf = HBaseConfiguration.create();
+				table = new HTable(conf, "NetworkData");
+			    map = new HashMap<String,IntWritable>();
+			}
+			
+			@Override
+			public void cleanup(Context context) throws IOException, InterruptedException
+			{
+				for(Entry<String, IntWritable> entry : map.entrySet())
+			      {
+			    	  context.write(new Text(entry.getKey()), new Text("N"+","+entry.getValue()));
+			      }
+				table.close();
+			}
+	}
+	
+	public static class RevisedNFTMapper2 extends Mapper<Object, Text, Text, Text>
+	{
+		HTable table;
+		
+		@Override
+		public void map(Object key, Text value, Context context) throws IOException, InterruptedException
+		{
+			String[] input = value.toString().split("\t");
+			String k = input[0];
+			String v = input[1];
+			Get g = new Get(Bytes.toBytes(k));
+			Result r = table.get(g);
+			if(r==null || r.isEmpty())
+			;
+			else
+			{
+				byte[] vHbase = r.getValue(Bytes.toBytes("Followers"), Bytes.toBytes("Followers"));
+				String valueStr = Bytes.toString(vHbase);
+				context.write(new Text(k), new Text("U"+","+valueStr+","+v));
+			}
+		}
+		
+		@Override
+		public void setup(Context context) throws IOException
+		{
+			Configuration config = HBaseConfiguration.create();
+			table = new HTable(config, "UserAndFollowers");
+		}
+		
+		@Override
+		public void cleanup(Context context) throws IOException
+		{
+			table.close();
+		}
+	}
+	
+	public static class RevisedNFTReducer extends Reducer<Text, Text, Text, Text>
+	{
+		public void reduce(Text key, Iterable<Text> values, Context context) throws IOException, InterruptedException
+		{
+			int count = 0;
+			int noOfFollowers = 0;
+			int peopleWhoRetweeted = 0;
+			for(Text t:values)
+			{
+				if(t.charAt(0)=='N')
+				{
+					String in[] = t.toString().split(",");
+					count = count + Integer.parseInt(in[1].toString());
+				}
+				else
+				{
+					String in[] = t.toString().split(",");
+					noOfFollowers = Integer.parseInt(in[1]);
+					peopleWhoRetweeted = Integer.parseInt(in[2]);
+				}
+			}
+			
+			int nonFriends = peopleWhoRetweeted-count;
+			if(nonFriends>=0 && (noOfFollowers>0 && peopleWhoRetweeted>0 && count>0))
+			context.write(key, new Text(Integer.valueOf(noOfFollowers) + "\t" + Integer.valueOf(peopleWhoRetweeted) + "\t"+ Integer.valueOf(count) + "\t" + Integer.valueOf(nonFriends)));
+		}
+	}
+	
+	public static void main(String[] args) throws IOException, ClassNotFoundException, InterruptedException
+	{
+		Configuration conf = new Configuration();
+		Job job = new Job(conf, "RevisedNFT");
+		String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
+        if (otherArgs.length != 3) {
+	      System.err.println("Usage: HCompute <in File1> <in File2> <out>");
+	      System.exit(2);
+         }
+        job.setJarByClass(RevisedNFT.class);
+        job.setNumReduceTasks(10);
+        /*org.apache.hadoop.fs.FileSystem fs = org.apache.hadoop.fs.FileSystem.get(conf);
+        FileStatus[] status_list = fs.listStatus(new Path(otherArgs[0]));
+        if(status_list!=null)
+        {
+        	for(FileStatus status: status_list)
+        	  MultipleInputs.addInputPath(job, status.getPath(), TextInputFormat.class, RevisedNFTMapper.class);
+        }*/
+        MultipleInputs.addInputPath(job, new Path(otherArgs[0]),TextInputFormat.class, RevisedNFTMapper.class);
+		MultipleInputs.addInputPath(job, new Path(otherArgs[1]),TextInputFormat.class, RevisedNFTMapper2.class);
+        job.setReducerClass(RevisedNFTReducer.class);
+        job.setOutputKeyClass(Text.class);
+        job.setOutputValueClass(Text.class);
+        FileOutputFormat.setOutputPath(job, new Path(otherArgs[2]));
+        try {
+			System.exit(job.waitForCompletion(true) ? 0 : 1);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		} catch (ClassNotFoundException e) {
+			e.printStackTrace();
+		}
+	}
+}
