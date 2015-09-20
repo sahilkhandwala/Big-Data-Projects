@@ -1,0 +1,54 @@
+REGISTER file:/home/hadoop/lib/pig/piggybank.jar;
+define CSVLoader org.apache.pig.piggybank.storage.CSVLoader();
+
+-- setting default number of reducers to 10
+-- also adding parallel 10 to each line to have 10 reducers in each operation
+SET default_parallel 10;
+
+-- loading the data into 2 relations
+
+Flight1 = LOAD 's3://homework34/data_input/data.csv' using CSVLoader() parallel 10;
+Flight2 = LOAD 's3://homework34/data_input/data.csv' USING CSVLoader() parallel 10;
+
+-- Filtering the data where origin='ORD', destination!='JFK' and diverted and cancelled = 0.00
+
+FilteredFlight1 = Filter Flight1 by $11 == 'ORD' and $17!= 'JFK' and (float)$41 == 0.00 and (float)$43 == 0.00 parallel 10;
+
+-- Filtering the data where origin!='ORD', destination='JFK' and diverted and cancelled = 0.00
+
+FilteredFlight2 = Filter Flight2 by $11!= 'ORD' and $17 == 'JFK' and (float)$41 == 0.00 and (float)$43 == 0.00 parallel 10;
+
+-- We are only selecting the usefult tuples 
+
+Relation1 = FOREACH FilteredFlight1 GENERATE (int)$0 as Year1, (int)$2 as Month1, $5 as FlightDate1, $11 as Origin1, $17 as Dest1, (int)$35 as ArrivalTime, (float)$37 as ArrDelay1 parallel 10;
+
+-- We are only selecting the usefult tuples 
+
+Relation2 = FOREACH FilteredFlight2 GENERATE (int)$0 as Year2, (int)$2 as Month2, $5 as FlightDate2, $11 as Origin2, $17 as Dest2, (int)$24 as DepartureTime, (float)$37 as ArrDelay2 parallel 10;
+
+-- Joining the Relation 1 by destination, flightdate and Relation 2 by origin, flightdate
+
+JoinFlights = Join Relation1 by (Dest1, FlightDate1), Relation2 by (Origin2, FlightDate2) parallel 10;
+
+-- After joining the 2 relations we are going to filter flights such that arrivaltime should be less than departure time
+
+FilterTime = Filter JoinFlights by ArrivalTime < DepartureTime parallel 10;
+
+-- We are checking if the month and year exists between June 2007 and May 2008 both inclusive
+
+FilterDate = Filter FilterTime by 
+(((Year1==2007) and (Month1>=6)) or ((Year1==2008) and (Month1<=5))) parallel 10; 
+
+-- For each line after filtering the data we are calculating the total delay by adding ArrivalDelay from Flight 1 relation + ArrivalDelay from Flight2 relation
+
+DelayCalculation = FOREACH FilterDate GENERATE (float)ArrDelay1 + ArrDelay2 as TotalDelay parallel 10;
+
+AllCounts = group DelayCalculation All parallel 10;
+
+-- We are calculating the average total delay
+
+AvgDelay = FOREACH AllCounts GENERATE AVG(DelayCalculation.TotalDelay) parallel 10;
+
+-- storing the result into a file
+
+STORE AvgDelay INTO 's3://homework34/output/PigLatin/Prog2/Result';
