@@ -1,0 +1,20 @@
+Written three PigLatin programs.
+JOINFIRST has two different versions. It starts with the join and then filters the results based on the time-range constraint, while
+FILTERFIRST does the filtering first. 
+
+JOINFIRST :- 
+1. Load the flights file as Flights1.
+2. Load the flights file again as Flights2.
+3. Remove as many records and attributes from Flights1 and Flights2 as possible, but do NOT yet use the condition that the flight date has to be between June 2007 and May 2008.
+4. Join Flights1 and Flights2, using the condition that the destination airport in Flights1 matches the origin in Flights2 and that both have the same flight date.
+5. Filter out those join tuples where the departure time in Flights2 is not after the arrival time in Flights1.
+6. Filter out those tuples whose flight date is not between June 2007 and May 2008.a. Version 1: check that both the flight date of Flights1 and Flights2 are in the range.b. Version 2: only check that the flight date of Flights1 is in the range.
+7. Compute the average delay over all the tuples produced in the previous step.
+
+FILTERFIRST :-
+1. Load the flights file as Flights1.
+2. Load the flights file again as Flights2.
+3. Remove as many records and attributes from Flights1 and Flights2 as possible, this time make sure you also use the condition that the flight date has to be between June 2007 and May 2008.
+4. Join Flights1 and Flights2, using the condition that the destination airport in Flights1 matches the origin in Flights2 and that both have the same flight date.
+5. Filter out those join tuples where the departure time in Flights2 is not after the arrival time in Flights1.
+6. Compute the average delay over all the tuples produced in the previous step.
